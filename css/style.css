@@ -267,6 +267,7 @@ button.wide { width: 100%; min-height: 52px; margin-top: 8px; }
 .li-main { flex: 1; min-width: 0; }
 .li-title { font-size: 17px; font-weight: 800; }
 .li-sub { font-size: 13px; color: var(--muted); font-weight: 500; margin-top: 2px; }
+.badge.warn { background: var(--warn); color: #000; }
 .badge { font-size: 12px; background: var(--accent); color: var(--accent-fg); padding: 3px 8px; border-radius: 8px; flex: none; }
 .round-card { margin-top: 8px; font-weight: 700; }
 .setup-name { font-size: 22px; font-weight: 800; }
@@ -278,7 +279,7 @@ button.wide { width: 100%; min-height: 52px; margin-top: 8px; }
 .start-sub { font-size: 13px; font-weight: 600; opacity: 0.85; margin-top: 4px; }
 .setup-tools { margin: 10px 0 8px; }
 .view[hidden] { display: none !important; }
-#finder[hidden], #setup[hidden], .round-card[hidden] { display: none; }
+#finder[hidden], #setup[hidden], .round-card[hidden], .list[hidden], h2[hidden] { display: none; }
 
 /* ---- ホール図 ---- */
 .hole-wrap { position: relative; flex: 1; min-height: 160px; border-radius: 14px; overflow: hidden; background: var(--hv-bg); }

@@ -243,6 +243,7 @@ function sanitizeCourse(c) {
     name: c.name.slice(0, 100),
     osm: c.osm && /^(way|relation|node)$/.test(c.osm.type) && Number.isFinite(c.osm.id) ? { type: c.osm.type, id: c.osm.id } : null,
     loc: isPt(c.loc) ? c.loc : null,
+    unverified: c.unverified === true, // 推定を含むデータ（現地で確認が必要）
     holes: c.holes.map((h) => ({
       id: typeof h.id === 'string' ? h.id : uid(),
       number: Number.isFinite(h.number) ? h.number : null,

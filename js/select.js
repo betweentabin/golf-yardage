@@ -1,7 +1,7 @@
 // ゴルフ場を選ぶ画面：検索、近くのゴルフ場、保存済み、ラウンドのスタート選択。
 import { greenCenter } from './geo.js';
 import {
-  state, commit, newCourse, newHole, sortHoles, holeLabel, roundOptions, roundPlan, startRound, endRound, activeCourse,
+  state, commit, newCourse, newHole, sortHoles, holeLabel, roundOptions, roundPlan, startRound, endRound, activeCourse, importJSON,
 } from './store.js';
 import { searchCourses, nearbyCourses, fetchCourse, buildHoles } from './osm.js';
 
@@ -73,22 +73,75 @@ export function initSelect({ getGps, showView, showBanner, openRegister }) {
     $('search-results').replaceChildren(...results.map(placeItem));
   }
 
+  /** 番号付きの全ホールにグリーンが登録されていれば「計測済み」 */
+  const isMeasured = (c) => {
+    const holes = c.holes.filter((h) => h.number != null);
+    return holes.length > 0 && holes.every((h) => h.greens.some((g) => greenCenter(g)));
+  };
+
+  function courseItem(c) {
+    const b = el('button', 'list-item');
+    const main = el('div', 'li-main');
+    main.append(el('div', 'li-title', c.name), el('div', 'li-sub', summary(c)));
+    b.append(main);
+    if (c.unverified) b.append(el('span', 'badge warn', '要確認'));
+    b.onclick = () => openSetup(c);
+    return b;
+  }
+
   function renderSaved() {
-    const list = $('saved-list');
-    if (!state.courses.length) {
-      list.replaceChildren(el('p', 'note', 'まだありません。上で検索して選ぶと、ここに保存されます（以後は圏外でも使えます）。'));
-      return;
+    const measured = state.courses.filter(isMeasured);
+    const partial = state.courses.filter((c) => !isMeasured(c));
+    $('measured-list').replaceChildren(
+      ...(measured.length
+        ? measured.map(courseItem)
+        : [el('p', 'note', 'まだありません。全ホールのグリーンを登録したゴルフ場がここに並びます。')])
+    );
+    $('partial-head').hidden = $('saved-list').hidden = !partial.length;
+    $('saved-list').replaceChildren(...partial.map(courseItem));
+  }
+
+  // ---- アプリに同梱した計測済みゴルフ場（courses/index.json） ----
+  let library = null;
+  async function loadLibrary() {
+    try {
+      const res = await fetch('courses/index.json', { cache: 'no-cache' });
+      library = res.ok ? await res.json() : [];
+    } catch {
+      library = [];
     }
-    list.replaceChildren(
-      ...state.courses.map((c) => {
+    renderLibrary();
+  }
+
+  function renderLibrary() {
+    const items = (library || []).filter((x) => x && x.file && x.name);
+    const installedIds = new Set(state.courses.map((c) => c.id));
+    const rest = items.filter((x) => !installedIds.has(x.id));
+    $('library-head').hidden = $('library-list').hidden = !rest.length;
+    $('library-list').replaceChildren(
+      ...rest.map((x) => {
         const b = el('button', 'list-item');
         const main = el('div', 'li-main');
-        main.append(el('div', 'li-title', c.name), el('div', 'li-sub', summary(c)));
+        main.append(el('div', 'li-title', x.name), el('div', 'li-sub', x.note || 'タップで追加'));
         b.append(main);
-        b.onclick = () => openSetup(c);
+        b.append(el('span', x.verified ? 'badge' : 'badge warn', x.verified ? '計測済み' : '要確認'));
+        b.onclick = () => installLibrary(x);
         return b;
       })
     );
+  }
+
+  function installLibrary(x) {
+    run(`「${x.name}」を追加しています…`, async () => {
+      const res = await fetch('courses/' + x.file);
+      if (!res.ok) throw new Error('データを読み込めませんでした');
+      importJSON(await res.text());
+      const c = state.courses.find((cc) => cc.id === x.id) || state.courses.at(-1);
+      if (!x.verified) c.unverified = true;
+      commit();
+      status('');
+      openSetup(c, x.verified ? '' : 'このデータは推定を含みます。初回のラウンドで各ホールのグリーンを確かめてください。');
+    });
   }
 
   function summary(c) {
@@ -213,6 +266,8 @@ export function initSelect({ getGps, showView, showBanner, openRegister }) {
     if (p) $('round-text').textContent = `ラウンド中: ${activeCourse()?.name}（${p.label}・${p.idx + 1}/${p.order.length}ホール目）`;
     renderResults();
     renderSaved();
+    if (library) renderLibrary();
+    else loadLibrary();
   }
 
   return {
