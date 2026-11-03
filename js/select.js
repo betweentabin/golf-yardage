@@ -1,0 +1,201 @@
+// ゴルフ場を選ぶ画面：検索、近くのゴルフ場、保存済み、ラウンドのスタート選択。
+import { greenCenter } from './geo.js';
+import {
+  state, commit, newCourse, newHole, sortHoles, holeLabel, roundOptions, roundPlan, startRound, endRound, activeCourse,
+} from './store.js';
+import { searchCourses, nearbyCourses, fetchCourse, buildHoles } from './osm.js';
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+};
+
+export function initSelect({ getGps, showView, showBanner }) {
+  let results = [];
+  let setupCourse = null;
+  let busy = false;
+
+  const status = (t) => ($('search-status').textContent = t);
+  const savedFor = (p) => state.courses.find((c) => c.osm && c.osm.type === p.osm.type && c.osm.id === p.osm.id);
+
+  async function run(label, fn) {
+    if (busy) return;
+    busy = true;
+    status(label);
+    try {
+      await fn();
+    } catch (e) {
+      status(e.message);
+    } finally {
+      busy = false;
+    }
+  }
+
+  $('search-form').onsubmit = (e) => {
+    e.preventDefault();
+    const q = $('search-text').value;
+    if (!q.trim()) return;
+    $('search-text').blur();
+    run('検索中…', async () => {
+      results = await searchCourses(q);
+      status(results.length ? `${results.length}件見つかりました` : '見つかりませんでした。正式名称の一部（例: 「霞ヶ関カンツリー」）で試してください');
+      renderResults();
+    });
+  };
+
+  $('nearby-btn').onclick = () => {
+    const g = getGps();
+    if (!g.pos) return status('現在地がまだ取れていません。少し待ってからもう一度押してください');
+    run('近くのゴルフ場を探しています…', async () => {
+      results = await nearbyCourses(g.pos);
+      status(results.length ? '近い順に表示しています' : '近く（約30km）にゴルフ場が見つかりませんでした');
+      renderResults();
+    });
+  };
+
+  function placeItem(p) {
+    const saved = savedFor(p);
+    const b = el('button', 'list-item');
+    const main = el('div', 'li-main');
+    main.append(el('div', 'li-title', p.name));
+    const sub = [p.distance != null ? `${(p.distance / 1000).toFixed(1)}km` : '', p.address].filter(Boolean).join('・');
+    if (sub) main.append(el('div', 'li-sub', sub));
+    b.append(main);
+    if (saved) b.append(el('span', 'badge', '保存済み'));
+    b.onclick = () => (saved ? openSetup(saved) : download(p));
+    return b;
+  }
+
+  function renderResults() {
+    $('search-results').replaceChildren(...results.map(placeItem));
+  }
+
+  function renderSaved() {
+    const list = $('saved-list');
+    if (!state.courses.length) {
+      list.replaceChildren(el('p', 'note', 'まだありません。上で検索して選ぶと、ここに保存されます（以後は圏外でも使えます）。'));
+      return;
+    }
+    list.replaceChildren(
+      ...state.courses.map((c) => {
+        const b = el('button', 'list-item');
+        const main = el('div', 'li-main');
+        main.append(el('div', 'li-title', c.name), el('div', 'li-sub', summary(c)));
+        b.append(main);
+        b.onclick = () => openSetup(c);
+        return b;
+      })
+    );
+  }
+
+  function summary(c) {
+    const groups = [...new Set(c.holes.map((h) => h.group).filter(Boolean))];
+    const ready = c.holes.filter((h) => h.greens.some((g) => greenCenter(g))).length;
+    return `${groups.length ? groups.join('・') + 'コース ' : ''}${c.holes.length}ホール（グリーン登録 ${ready}）`;
+  }
+
+  /** OSM からホール情報を取得して保存する。existing があれば作り直す */
+  function download(place, existing = null) {
+    run(`「${place.name}」のホール情報を取得中…`, async () => {
+      const json = await fetchCourse(place, (n) => status(`サーバー混雑のため再試行中…（${n}回目）`));
+      const { holes, stats } = buildHoles(json);
+      const course = existing || newCourse(place.name, place.osm);
+      course.holes = holes;
+      let note = `グリーン ${stats.greens - stats.practice}面・ホール ${stats.holeWays}本を取り込みました。`;
+      if (holes.filter((h) => h.number != null).length === 0) {
+        // OSM にホール情報がないゴルフ場は、18ホールの枠だけ作って手動登録してもらう
+        course.holes = [];
+        for (let n = 1; n <= 18; n++) newHole(course, n);
+        note = 'OpenStreetMapにこのゴルフ場のホール情報がありません。18ホールの枠を作ったので、「地図で確認・修正」でグリーンを登録してください。';
+      }
+      sortHoles(course);
+      commit();
+      status('');
+      openSetup(course, note);
+    });
+  }
+
+  function openSetup(course, note = '') {
+    setupCourse = course;
+    $('finder').hidden = true;
+    $('setup').hidden = false;
+    $('setup-name').textContent = course.name;
+
+    const missing = course.holes.filter((h) => h.number != null && !h.greens.some((g) => greenCenter(g)));
+    const info = [note, summary(course)];
+    if (missing.length) info.push(`グリーン未登録: ${missing.map(holeLabel).join('、')}（そのホールは距離が出ません）`);
+    $('setup-info').textContent = info.filter(Boolean).join('\n');
+
+    // 東・西などのコースごとに見出しを付け、OUT / IN を横に並べる
+    const opts = roundOptions(course);
+    const box = $('setup-options');
+    box.replaceChildren();
+    if (!opts.length) box.append(el('p', 'note', '番号の付いたホールがありません。「地図で確認・修正」でホールを登録してください。'));
+    let lastGroup = null;
+    for (const o of opts) {
+      if (o.short && o.group && o.group !== lastGroup) box.append(el('div', 'start-group', `${o.group}コース`));
+      lastGroup = o.group;
+      const b = el('button', 'start-btn');
+      b.append(el('div', 'start-label', o.short || o.label), el('div', 'start-sub', `${o.sub}・${o.order.length}ホール`));
+      b.onclick = () => {
+        setupCourse = null;
+        startRound(course, o);
+        commit();
+        showView('measure');
+      };
+      box.append(b);
+    }
+    $('setup-update').hidden = !course.osm;
+  }
+
+  $('setup-back').onclick = () => {
+    setupCourse = null;
+    render();
+  };
+  $('setup-map').onclick = () => {
+    if (state.activeCourseId !== setupCourse.id) {
+      state.activeCourseId = setupCourse.id;
+      state.round.holeId = null;
+      commit();
+    }
+    showView('map');
+  };
+  $('setup-update').onclick = () => {
+    const c = setupCourse;
+    if (!c?.osm) return;
+    if (!confirm('OpenStreetMapから取り直します。このゴルフ場で手動修正した内容は消えます。')) return;
+    const first = c.holes.flatMap((h) => h.greens).map(greenCenter).find(Boolean);
+    $('setup').hidden = true;
+    $('finder').hidden = false;
+    download({ name: c.name, osm: c.osm, lat: first?.[0], lon: first?.[1], bbox: null }, c);
+  };
+
+  $('round-continue').onclick = () => showView('measure');
+  $('round-end').onclick = () => {
+    if (!confirm('ラウンドを終了しますか？')) return;
+    endRound();
+    commit();
+  };
+
+  function render() {
+    if (setupCourse && state.courses.includes(setupCourse)) return openSetup(setupCourse);
+    setupCourse = null;
+    $('setup').hidden = true;
+    $('finder').hidden = false;
+    const p = roundPlan();
+    $('round-card').hidden = !p;
+    if (p) $('round-text').textContent = `ラウンド中: ${activeCourse()?.name}（${p.label}・${p.idx + 1}/${p.order.length}ホール目）`;
+    renderResults();
+    renderSaved();
+  }
+
+  return {
+    render,
+    reset() {
+      setupCourse = null;
+    },
+  };
+}

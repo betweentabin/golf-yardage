@@ -2,8 +2,8 @@
 /* global L */
 import { centroid, greenCenter, haversine, pointInPolygon, toYd } from './geo.js';
 import {
-  state, commit, activeCourse, activeHole, activeGreen, setActiveGreen, stepHole,
-  newCourse, newHole, newGreen, sortHoles,
+  state, commit, activeCourse, activeHole, activeGreen, setActiveGreen, stepHole, setHole,
+  newCourse, newHole, newGreen, sortHoles, holeLabel,
 } from './store.js';
 import { fetchGolf, buildHoles } from './osm.js';
 
@@ -58,7 +58,7 @@ export class MapView {
   bindUI() {
     $('map-prev').onclick = () => { stepHole(-1); commit(); this.fitHole(); };
     $('map-next').onclick = () => { stepHole(1); commit(); this.fitHole(); };
-    $('map-hole-select').onchange = (e) => { state.round.holeId = e.target.value; commit(); this.fitHole(); };
+    $('map-hole-select').onchange = (e) => { setHole(e.target.value); commit(); this.fitHole(); };
     $('map-green-select').onchange = (e) => {
       const h = activeHole();
       if (!h) return;
@@ -150,7 +150,7 @@ export class MapView {
     const hs = $('map-hole-select');
     hs.replaceChildren(
       ...(course?.holes.length
-        ? course.holes.map((h) => new Option(`${h.number ?? '?'}H${h.par ? ' P' + h.par : ''}`, h.id, false, h === hole))
+        ? course.holes.map((h) => new Option(`${holeLabel(h)}${h.par ? ' P' + h.par : ''}`, h.id, false, h === hole))
         : [new Option('ホールなし', '')])
     );
     const gs = $('map-green-select');
@@ -387,9 +387,14 @@ export class MapView {
         const n = prompt('ホール番号', hole.number ?? '');
         if (n === null) return;
         const num = n.trim() === '' ? null : parseInt(n, 10);
-        if (num != null && course.holes.some((h) => h !== hole && h.number === num) && !confirm(`${num}番は既にあります。重複させますか？`)) return;
+        const grp = prompt('コース名（東・西など。1コースだけなら空欄）', hole.group || '');
+        if (grp === null) return;
+        const group = grp.trim();
+        if (num != null && course.holes.some((h) => h !== hole && h.number === num && (h.group || '') === group) &&
+            !confirm(`${group ? group + 'コースの' : ''}${num}番は既にあります。重複させますか？`)) return;
         const p = prompt('Par（空欄可）', hole.par ?? '');
         hole.number = Number.isFinite(num) ? num : null;
+        hole.group = group;
         if (p !== null) hole.par = parseInt(p, 10) || null;
         sortHoles(course);
         commit();

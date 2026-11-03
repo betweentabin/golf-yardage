@@ -1,5 +1,5 @@
 // オフライン対応。アプリ本体は事前にキャッシュし、地図タイルは表示したものを保存する。
-const VERSION = 'v2';
+const VERSION = 'v3';
 const APP_CACHE = `app-${VERSION}`;
 const TILE_CACHE = 'tiles';
 const TILE_LIMIT = 3000;
@@ -13,6 +13,7 @@ const APP_FILES = [
   'js/map.js',
   'js/osm.js',
   'js/position.js',
+  'js/select.js',
   'js/store.js',
   'vendor/leaflet/leaflet.js',
   'vendor/leaflet/leaflet.css',

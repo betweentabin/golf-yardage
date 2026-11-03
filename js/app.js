@@ -1,11 +1,12 @@
 // 画面の組み立て：計測、設定、タブ切り替え、画面の常時点灯、ホール自動判定。
 import { greenDistances, toYd, greenCenter, distToSegment, haversine } from './geo.js';
 import {
-  state, commit, subscribe, activeCourse, activeHole, activeGreen, setActiveGreen, stepHole,
-  getPinOffset, setPinOffset, newCourse, exportJSON, importJSON,
+  state, commit, subscribe, activeCourse, activeHole, activeGreen, setActiveGreen, stepHole, setHole,
+  getPinOffset, setPinOffset, newCourse, exportJSON, importJSON, roundPlan, endRound, holeLabel,
 } from './store.js';
 import { Tracker } from './position.js';
 import { MapView } from './map.js';
+import { initSelect } from './select.js';
 
 const $ = (id) => document.getElementById(id);
 const tracker = new Tracker(() => state.settings);
@@ -23,13 +24,14 @@ let currentView = 'measure';
 let mapView = null;
 function showView(name) {
   currentView = name;
-  for (const v of ['measure', 'map', 'settings']) $('view-' + v).hidden = v !== name;
+  for (const v of ['measure', 'select', 'map', 'settings']) $('view-' + v).hidden = v !== name;
   document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   if (name === 'map') {
     if (!mapView) mapView = new MapView({ tracker, showBanner, getGps: () => gps });
     mapView.show();
   }
   if (name === 'settings') renderSettings();
+  if (name === 'select') select.render();
 }
 document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => showView(b.dataset.view)));
 
@@ -39,8 +41,10 @@ const fmt = (m) => (m == null ? '---' : String(Math.round(toYd(m))));
 function renderMeasure() {
   const course = activeCourse();
   const hole = activeHole();
-  $('course-name').textContent = course ? course.name : 'コース未選択';
-  $('hole-num').textContent = hole ? (hole.number != null ? `${hole.number}H` : '?H') : '--';
+  const plan = roundPlan();
+  $('course-name').textContent = course ? course.name : 'ゴルフ場を選ぶ';
+  $('hole-num').textContent = hole ? holeLabel(hole) : '--';
+  $('round-progress').textContent = plan ? `${plan.idx + 1}/${plan.order.length}ホール目` : '';
   $('hole-par').textContent = hole?.par ? `Par${hole.par}` : '';
   $('auto-badge').hidden = !state.settings.autoHole;
 
@@ -62,9 +66,9 @@ function renderMeasure() {
 
   const green = activeGreen(hole);
   let noData = '';
-  if (!course) noData = '「コース・設定」でコースを作るか、JSONを読み込んでください';
-  else if (!hole) noData = '「地図・編集」でホールを登録してください';
-  else if (!greenCenter(green)) noData = 'このホールにはグリーンが登録されていません。「地図・編集」で登録してください';
+  if (!course) noData = '「ゴルフ場」タブでゴルフ場を選んでください';
+  else if (!hole) noData = '「地図」タブでホールを登録してください';
+  else if (!greenCenter(green)) noData = 'このホールにはグリーンが登録されていません。「地図」タブ→「編集」で登録できます';
   $('no-data').textContent = noData;
   $('no-data').hidden = !noData;
   $('distances').hidden = !!noData;
@@ -98,8 +102,16 @@ function renderMeasure() {
 
 $('prev-hole').onclick = () => manualStep(-1);
 $('next-hole').onclick = () => manualStep(1);
+$('course-name').onclick = () => showView('select');
 function manualStep(dir) {
-  stepHole(dir);
+  if (stepHole(dir) === 'end') {
+    if (!confirm('最終ホールです。ラウンドを終了しますか？')) return;
+    endRound();
+    select.reset();
+    commit();
+    showView('select');
+    return;
+  }
   autoHole.candidate = null;
   autoHole.suppressUntil = Date.now() + 60_000; // 手動で切り替えたら1分は自動判定しない
   commit();
@@ -139,8 +151,11 @@ function runAutoHole() {
   const course = activeCourse();
   const cur = activeHole();
   if (!course || !cur) return;
+  // ラウンド中は、回る予定のホールだけから選ぶ
+  const plan = roundPlan();
+  const candidates = plan ? course.holes.filter((h) => plan.order.includes(h.id)) : course.holes;
   let best = null, bestD = Infinity;
-  for (const h of course.holes) {
+  for (const h of candidates) {
     const d = holeDistance(gps.pos, h);
     if (d < bestD) { bestD = d; best = h; }
   }
@@ -150,7 +165,7 @@ function runAutoHole() {
   if (autoHole.candidate === best.id) autoHole.count++;
   else { autoHole.candidate = best.id; autoHole.count = 1; }
   if (autoHole.count >= 3) {
-    state.round.holeId = best.id;
+    setHole(best.id);
     autoHole.candidate = null;
     commit();
   }
@@ -345,13 +360,18 @@ if ('serviceWorker' in navigator) {
 function applyTheme() {
   document.documentElement.dataset.theme = state.settings.theme;
 }
+const select = initSelect({ getGps: () => gps, showView, showBanner });
+
 subscribe(() => {
   applyTheme();
   renderMeasure();
   if (currentView === 'settings') renderSettings();
+  if (currentView === 'select') select.render();
   mapView?.refresh();
 });
 applyTheme();
 renderMeasure();
+// ラウンド中でなく、ゴルフ場も選ばれていなければ選ぶ画面から始める
+if (!roundPlan() && !activeCourse()) showView('select');
 tracker.start();
 requestWakeLock();
