@@ -2,7 +2,7 @@
 import { haversine, weightedMean } from './geo.js';
 
 const BUFFER_MS = 60_000; // 平均化に使う測位結果の保持時間
-const STALE_MS = 15_000;  // この時間測位が来なければ「測位中」に戻す
+const STALE_MS = 20_000;  // この時間測位が来なければ「更新が止まっている」と知らせる
 
 /**
  * emit される状態:
@@ -93,9 +93,9 @@ export class Tracker {
     this.buffer = this.buffer.filter((f) => now - f.t <= BUFFER_MS);
 
     clearTimeout(this.staleTimer);
+    // 静止中は iPhone が測位の間隔を空けることがあるので、距離は消さずに古いことだけ知らせる
     this.staleTimer = setTimeout(() => {
-      this.buffer = [];
-      this.emit({ status: 'searching', rawAcc: this.last?.acc, message: '測位が途切れています' });
+      this.emit({ ...this.state, stale: true });
     }, STALE_MS);
 
     // 精度ゲート

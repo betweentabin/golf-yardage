@@ -94,8 +94,10 @@ function renderMeasure() {
     moving: '移動中',
     fixed: `確定（${gps.n}点平均）`,
   };
-  $('gps-dot').className = 'dot ' + gps.status;
-  $('gps-text').textContent = state.settings.simulate ? '[テスト] ' + texts[gps.status] : texts[gps.status];
+  $('gps-dot').className = 'dot ' + (gps.stale && gps.status === 'fixed' ? 'moving' : gps.status);
+  let text = texts[gps.status];
+  if (gps.stale && (gps.status === 'fixed' || gps.status === 'moving')) text = '更新が止まっています（最後の位置）';
+  $('gps-text').textContent = state.settings.simulate ? '[テスト] ' + text : text;
   const acc = gps.status === 'fixed' || gps.status === 'moving' ? gps.acc : gps.rawAcc;
   $('gps-acc').textContent = acc != null ? `±${acc < 10 ? acc.toFixed(1) : Math.round(acc)}m` : '';
 }

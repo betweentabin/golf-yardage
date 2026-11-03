@@ -1,5 +1,5 @@
 // オフライン対応。アプリ本体は事前にキャッシュし、地図タイルは表示したものを保存する。
-const VERSION = 'v3';
+const VERSION = 'v4';
 const APP_CACHE = `app-${VERSION}`;
 const TILE_CACHE = 'tiles';
 const TILE_LIMIT = 3000;
