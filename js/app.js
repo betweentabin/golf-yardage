@@ -2,7 +2,7 @@
 import { greenDistances, toYd, greenCenter, distToSegment, haversine } from './geo.js';
 import {
   state, commit, subscribe, activeCourse, activeHole, activeGreen, setActiveGreen, stepHole, setHole,
-  getPinOffset, setPinOffset, newCourse, exportJSON, importJSON, roundPlan, endRound, holeLabel,
+  getPinOffset, setPinOffset, setGreenPref, newCourse, exportJSON, importJSON, roundPlan, endRound, holeLabel,
 } from './store.js';
 import { Tracker } from './position.js';
 import { MapView } from './map.js';
@@ -57,7 +57,8 @@ function renderMeasure() {
         const b = document.createElement('button');
         b.textContent = g.name || `G${i + 1}`;
         b.classList.toggle('on', g === cur);
-        b.onclick = () => { setActiveGreen(hole, i); commit(); };
+        // 2グリーンはその日どちらかを使うので、全ホールまとめて切り替える
+        b.onclick = () => { if (g.name) setGreenPref(g.name); else setActiveGreen(hole, i); commit(); };
         return b;
       })
     );
@@ -362,7 +363,15 @@ if ('serviceWorker' in navigator) {
 function applyTheme() {
   document.documentElement.dataset.theme = state.settings.theme;
 }
-const select = initSelect({ getGps: () => gps, showView, showBanner });
+const select = initSelect({
+  getGps: () => gps,
+  showView,
+  showBanner,
+  openRegister: () => {
+    showView('map');
+    mapView.openRegister();
+  },
+});
 
 subscribe(() => {
   applyTheme();

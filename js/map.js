@@ -6,6 +6,7 @@ import {
   newCourse, newHole, newGreen, sortHoles, holeLabel,
 } from './store.js';
 import { fetchGolf, buildHoles } from './osm.js';
+import { traceGreenAt } from './trace.js';
 
 const $ = (id) => document.getElementById(id);
 const ll = (p) => L.latLng(p[0], p[1]);
@@ -15,11 +16,12 @@ const yd = (m) => Math.round(toYd(m));
 const TILES = {
   gsi: {
     url: 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',
-    opt: { maxNativeZoom: 18, maxZoom: 21, attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>' },
+    // crossOrigin: 写真の画素を読んでグリーンをなぞるため、CORS で取得する
+    opt: { maxNativeZoom: 18, maxZoom: 21, crossOrigin: 'anonymous', attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>' },
   },
   osm: {
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    opt: { maxNativeZoom: 19, maxZoom: 21, attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' },
+    opt: { maxNativeZoom: 19, maxZoom: 21, crossOrigin: 'anonymous', attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' },
   },
 };
 
@@ -34,7 +36,9 @@ export class MapView {
     this.showBanner = showBanner;
     this.getGps = getGps;
     this.editing = false;
-    this.mode = null;   // null | 'outline' | 'center' | 'tee' | 'sampling'
+    this.mode = null;   // null | 'outline' | 'center' | 'tee' | 'sampling' | 'trace' | 'register'
+    this.reg = null;    // 写真から順に登録: { holeIds, i, slot }  slot 0 = 1面目(左), 1 = 2面目(右)
+    this.tracing = false;
     this.draft = [];
     this.fittedHoleId = null;
 
@@ -77,7 +81,8 @@ export class MapView {
       this.setMode(null);
       if (this.editing) this.fitGreen();
     };
-    $('mode-cancel').onclick = () => this.setMode(null);
+    $('mode-cancel').onclick = () => { this.reg = null; this.setMode(null); };
+    $('mode-skip').onclick = () => this.regAdvance();
     $('mode-undo').onclick = () => { this.draft.pop(); this.renderDraft(); };
     $('mode-done').onclick = () => this.finishOutline();
     document.querySelectorAll('#edit-buttons [data-act]').forEach((b) => (b.onclick = () => this.action(b.dataset.act)));
@@ -109,9 +114,13 @@ export class MapView {
         if (c) pts.push(c);
       }
     }
+    // ホール情報がまだ無いときは、ゴルフ場にいれば現在地、自宅などで登録するならゴルフ場の位置
+    const loc = activeCourse()?.loc;
+    const me = this.getGps().pos;
     if (pts.length === 1) this.centerOn(pts[0], 18);
     else if (pts.length > 1) this.fitVisible(pts, 19);
-    else if (this.getGps().pos) this.centerOn(this.getGps().pos, 17);
+    else if (me && (!loc || haversine(me, loc) < 3000)) this.centerOn(me, 17);
+    else if (loc) this.centerOn(loc, 16);
   }
 
   // 地図の上部はボタン、編集中は下部がパネルで隠れるので、見えている範囲に収める
@@ -261,6 +270,8 @@ export class MapView {
     $('mode-undo').hidden = mode !== 'outline';
     $('mode-done').hidden = mode !== 'outline';
     $('mode-cancel').hidden = mode === 'sampling';
+    $('mode-skip').hidden = mode !== 'register';
+    $('mode-cancel').textContent = mode === 'register' ? '終了' : 'やめる';
     this.refresh();
   }
 
@@ -283,6 +294,10 @@ export class MapView {
       hole.tee = p;
       this.setMode(null);
       commit();
+      return;
+    }
+    if (this.mode === 'trace' || this.mode === 'register') {
+      this.traceAt(p);
       return;
     }
     if (this.mode) return;
@@ -309,6 +324,105 @@ export class MapView {
     L.circleMarker(ll(p), { radius: 7, color: '#000', fillColor: '#fff', fillOpacity: 1, interactive: false }).addTo(this.measureLayer);
     $('map-info').textContent = parts.join(' ／ ') || 'グリーンも現在地もありません';
     $('map-info').hidden = false;
+  }
+
+  // ---------- 航空写真からグリーンをなぞる ----------
+
+  /** p をタップしたグリーンをなぞり、今のグリーン（登録モードなら順番の枠）に入れる */
+  async traceAt(p) {
+    if (this.tracing) return;
+    this.tracing = true;
+    const keepText = $('edit-mode-text').textContent;
+    $('edit-mode-text').textContent = '航空写真からなぞっています…';
+    let r;
+    try {
+      r = await traceGreenAt(p, TILES.gsi.url);
+    } catch (e) {
+      r = { ok: false, reason: e.message };
+    }
+    this.tracing = false;
+    const target = this.traceTarget();
+    if (!target) return this.setMode(null);
+    if (r.ok) {
+      target.green.outline = r.outline;
+      target.green.center = centroid(r.outline);
+    } else {
+      $('edit-mode-text').textContent = keepText;
+      if (!confirm(`うまくなぞれませんでした: ${r.reason}\n\nタップした地点をグリーン中心として登録しますか？（外形なし。手前・奥は出ません）`)) return;
+      target.green.outline = [];
+      target.green.center = p;
+    }
+    commit();
+    if (this.mode === 'register') this.regAdvance(true);
+    else this.setMode(null);
+  }
+
+  /** なぞった結果を入れる先。登録モードでは左→右の順に枠を用意する */
+  traceTarget() {
+    if (this.mode !== 'register') {
+      const hole = this.ensureHole();
+      if (!hole) return null;
+      if (!hole.greens.length) hole.greens.push(newGreen(''));
+      return { hole, green: activeGreen(hole) };
+    }
+    const hole = activeCourse()?.holes.find((h) => h.id === this.reg.holeIds[this.reg.i]);
+    if (!hole) return null;
+    if (this.reg.slot === 1) {
+      if (hole.greens.length < 2) hole.greens.push(newGreen(''));
+      hole.greens[0].name = '左';
+      hole.greens[1].name = '右';
+    }
+    if (!hole.greens.length) hole.greens.push(newGreen(''));
+    return { hole, green: hole.greens[this.reg.slot] };
+  }
+
+  /** スタート選択画面から: 編集を開いて、今のホールから写真で登録を始める */
+  openRegister() {
+    this.editing = true;
+    this.fitHole();
+    this.startRegister();
+  }
+
+  startRegister() {
+    const course = this.ensureCourse();
+    if (!course) return;
+    const holes = course.holes.filter((h) => h.number != null);
+    if (!holes.length) return alert('番号の付いたホールがありません。先に「＋ホール」で作ってください');
+    const cur = holes.indexOf(activeHole());
+    this.reg = { holeIds: holes.map((h) => h.id), i: Math.max(0, cur), slot: 0 };
+    this.setMode('register');
+    this.regShow();
+  }
+
+  /** 次の枠へ。traced なら1面登録した直後 */
+  regAdvance(traced = false) {
+    if (!this.reg) return;
+    if (this.reg.slot === 0 && traced) {
+      this.reg.slot = 1; // 2グリーンなら右も
+    } else {
+      this.reg.slot = 0;
+      this.reg.i++;
+    }
+    if (this.reg.i >= this.reg.holeIds.length) {
+      this.reg = null;
+      this.setMode(null);
+      alert('最後のホールまで終わりました。計測画面で距離を確認できます。');
+      return;
+    }
+    this.regShow();
+  }
+
+  regShow() {
+    const course = activeCourse();
+    const hole = course.holes.find((h) => h.id === this.reg.holeIds[this.reg.i]);
+    setHole(hole.id);
+    setActiveGreen(hole, this.reg.slot);
+    commit();
+    const n = `${this.reg.i + 1}/${this.reg.holeIds.length}`;
+    $('edit-mode-text').textContent = this.reg.slot === 0
+      ? `${holeLabel(hole)}（${n}）: グリーンをタップ。2グリーンなら左から`
+      : `${holeLabel(hole)}: 右グリーンをタップ。1グリーンなら「次へ」`;
+    $('mode-skip').textContent = this.reg.slot === 0 ? 'このホールは飛ばす' : '次へ';
   }
 
   onLongPress(e) {
@@ -347,6 +461,7 @@ export class MapView {
 
   async action(act) {
     if (act === 'osm') return this.importOSM();
+    if (act === 'register') return this.startRegister();
     if (act === 'cache-tiles') return this.cacheTiles();
 
     const course = this.ensureCourse();
@@ -371,6 +486,9 @@ export class MapView {
         break;
       case 'center':
         this.setMode('center', '中心: グリーン中心をタップ');
+        break;
+      case 'trace':
+        this.setMode('trace', `写真から: ${holeLabel(hole)}${green.name ? ' ' + green.name : ''}のグリーンの真ん中をタップ`);
         break;
       case 'tee':
         this.setMode('tee', `ティー: ${hole.number ?? '?'}番のティーをタップ`);
@@ -512,7 +630,7 @@ export class MapView {
     const worker = async () => {
       while (queue.length) {
         const url = queue.shift();
-        try { await fetch(url, { mode: 'no-cors' }); } catch { failed++; }
+        try { if (!(await fetch(url, { mode: 'cors' })).ok) failed++; } catch { failed++; }
         done++;
         $('edit-mode-text').textContent = `地図を保存中… ${done}/${tiles.length}`;
       }

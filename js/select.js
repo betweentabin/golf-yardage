@@ -13,7 +13,7 @@ const el = (tag, cls, text) => {
   return e;
 };
 
-export function initSelect({ getGps, showView, showBanner }) {
+export function initSelect({ getGps, showView, showBanner, openRegister }) {
   let results = [];
   let setupCourse = null;
   let busy = false;
@@ -104,12 +104,22 @@ export function initSelect({ getGps, showView, showBanner }) {
       const { holes, stats } = buildHoles(json);
       const course = existing || newCourse(place.name, place.osm);
       course.holes = holes;
+      if (Number.isFinite(place.lat) && Number.isFinite(place.lon)) course.loc = [place.lat, place.lon];
       let note = `グリーン ${stats.greens - stats.practice}面・ホール ${stats.holeWays}本を取り込みました。`;
       if (holes.filter((h) => h.number != null).length === 0) {
-        // OSM にホール情報がないゴルフ場は、18ホールの枠だけ作って手動登録してもらう
+        // OSM にホール情報がないゴルフ場は、コース構成を聞いてホールの枠だけ作る
         course.holes = [];
-        for (let n = 1; n <= 18; n++) newHole(course, n);
-        note = 'OpenStreetMapにこのゴルフ場のホール情報がありません。18ホールの枠を作ったので、「地図で確認・修正」でグリーンを登録してください。';
+        const names = prompt(
+          'OpenStreetMapにこのゴルフ場のホール情報がありません。ホールの枠を作ります。\n' +
+          '複数コースがあれば、コース名をカンマ区切りで入力してください（例: 出流,駒）。1コースだけなら空欄のままOK。',
+          ''
+        );
+        const groups = names && names.trim() ? names.split(/[,、，\s]+/).map((x) => x.trim()).filter(Boolean) : [''];
+        const per = prompt('1コースのホール数（18 または 9）', '18');
+        const n = parseInt(per, 10) === 9 ? 9 : 18;
+        for (const g of groups) for (let i = 1; i <= n; i++) newHole(course, i).group = g;
+        note = `ホール情報がないため、${groups.length > 1 ? groups.join('・') + 'の' : ''}${n}ホール${groups.length > 1 ? '×' + groups.length : ''}の枠を作りました。` +
+          '「写真からグリーンを登録」で、番号順にグリーンをタップしてください。';
       }
       sortHoles(course);
       commit();
@@ -126,7 +136,10 @@ export function initSelect({ getGps, showView, showBanner }) {
 
     const missing = course.holes.filter((h) => h.number != null && !h.greens.some((g) => greenCenter(g)));
     const info = [note, summary(course)];
-    if (missing.length) info.push(`グリーン未登録: ${missing.map(holeLabel).join('、')}（そのホールは距離が出ません）`);
+    if (missing.length) {
+      const list = missing.length <= 6 ? missing.map(holeLabel).join('、') : `${missing.slice(0, 3).map(holeLabel).join('、')} ほか${missing.length - 3}ホール`;
+      info.push(`グリーン未登録: ${list}（そのホールは距離が出ません）`);
+    }
     $('setup-info').textContent = info.filter(Boolean).join('\n');
 
     // 東・西などのコースごとに見出しを付け、OUT / IN を横に並べる
@@ -149,11 +162,21 @@ export function initSelect({ getGps, showView, showBanner }) {
       box.append(b);
     }
     $('setup-update').hidden = !course.osm;
+    $('setup-register').hidden = missing.length === 0;
+    $('setup-register').textContent = `写真からグリーンを登録（未登録 ${missing.length}ホール）`;
   }
 
   $('setup-back').onclick = () => {
     setupCourse = null;
     render();
+  };
+  $('setup-register').onclick = () => {
+    state.activeCourseId = setupCourse.id;
+    // 未登録の最初のホールから始める
+    const first = setupCourse.holes.find((h) => h.number != null && !h.greens.some((g) => greenCenter(g)));
+    if (first) state.round.holeId = first.id;
+    commit();
+    openRegister();
   };
   $('setup-map').onclick = () => {
     if (state.activeCourseId !== setupCourse.id) {

@@ -308,7 +308,7 @@ function toGreen(g) {
   return { id: uid(), name: '', center: g.center, outline: g.outline };
 }
 
-/** 2グリーンを、ティーから見た左右で L / R と名付ける。ティーが無ければ A / B。 */
+/** 2グリーンを、ティーから見た左右で「左」「右」と名付ける。ティーが無ければ A / B。 */
 function nameTwoGreens(h) {
   const [a, b] = h.greens;
   if (!h.tee) {
@@ -321,7 +321,7 @@ function nameTwoGreens(h) {
   const [ax, ay] = v(a.center);
   const [bx, by] = v(b.center);
   const aIsLeft = ax * by - ay * bx < 0;
-  a.name = aIsLeft ? 'L' : 'R';
-  b.name = aIsLeft ? 'R' : 'L';
-  h.greens.sort((x, y) => x.name.localeCompare(y.name));
+  a.name = aIsLeft ? '左' : '右';
+  b.name = aIsLeft ? '右' : '左';
+  if (!aIsLeft) h.greens.reverse();
 }

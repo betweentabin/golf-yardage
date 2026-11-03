@@ -1,7 +1,8 @@
 // オフライン対応。アプリ本体は事前にキャッシュし、地図タイルは表示したものを保存する。
-const VERSION = 'v4';
+const VERSION = 'v5';
 const APP_CACHE = `app-${VERSION}`;
-const TILE_CACHE = 'tiles';
+// 写真の画素を読むため CORS で保存する。旧 'tiles' は no-cors（読めない形式）なので使わない
+const TILE_CACHE = 'tiles-v2';
 const TILE_LIMIT = 3000;
 
 const APP_FILES = [
@@ -14,6 +15,7 @@ const APP_FILES = [
   'js/osm.js',
   'js/position.js',
   'js/select.js',
+  'js/trace.js',
   'js/store.js',
   'vendor/leaflet/leaflet.js',
   'vendor/leaflet/leaflet.css',
@@ -30,7 +32,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('app-') && k !== APP_CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => (k.startsWith('app-') && k !== APP_CACHE) || k === 'tiles').map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -54,7 +56,8 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       caches.open(TILE_CACHE).then(async (cache) => {
         const hit = await cache.match(req.url);
-        if (hit) return hit;
+        // CORS の要求に読めない形式（opaque）を返すと失敗するので、その場合は取り直す
+        if (hit && !(hit.type === 'opaque' && req.mode === 'cors')) return hit;
         const res = await fetch(req);
         if (res.ok || res.type === 'opaque') {
           cache.put(req.url, res.clone());

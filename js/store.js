@@ -1,6 +1,6 @@
 // コースデータと設定の保存（localStorage）、JSONのエクスポート・インポート。
 //
-// Course: { id, name, osm: {type, id}|null, holes: Hole[] }
+// Course: { id, name, osm: {type, id}|null, loc: [lat,lon]|null, holes: Hole[] }  loc はゴルフ場の位置
 // Hole:   { id, number, par, group, tee: [lat,lon]|null, greens: Green[] }
 //         group は同じゴルフ場内のコース名（東・西など）。1コースなら ''
 // Green:  { id, name, center: [lat,lon]|null, outline: [lat,lon][] }
@@ -78,10 +78,22 @@ export function activeHole() {
   return h;
 }
 
+/**
+ * そのホールで使うグリーン。
+ * 地図で個別に選んだものがあればそれ、なければ「今日は左」のような全体の指定（greenPref）に合う名前のもの
+ */
 export function activeGreen(hole = activeHole()) {
   if (!hole || hole.greens.length === 0) return null;
-  const i = state.round.greenIdx[hole.id] ?? 0;
-  return hole.greens[Math.min(i, hole.greens.length - 1)];
+  const i = state.round.greenIdx[hole.id];
+  if (i != null) return hole.greens[Math.min(i, hole.greens.length - 1)];
+  const pref = state.round.greenPref && hole.greens.find((g) => g.name === state.round.greenPref);
+  return pref || hole.greens[0];
+}
+
+/** 2グリーンの、今日使う側を全ホールまとめて切り替える */
+export function setGreenPref(name) {
+  state.round.greenPref = name;
+  state.round.greenIdx = {};
 }
 
 export function setActiveGreen(hole, idx) {
@@ -138,7 +150,8 @@ export function startRound(course, opt) {
   state.activeCourseId = course.id;
   state.round = {
     holeId: opt.order[0].id,
-    greenIdx: state.round.greenIdx,
+    greenIdx: {},
+    greenPref: state.round.greenPref ?? null, // 2グリーンの左右は前回の選択を引き継ぐ
     pinOffsets: {}, // ピン位置は日ごとに変わるのでリセット
     plan: { courseId: course.id, label: opt.label, order: opt.order.map((h) => h.id), idx: 0, startedAt: Date.now() },
   };
@@ -226,6 +239,7 @@ function sanitizeCourse(c) {
     id: typeof c.id === 'string' ? c.id : uid(),
     name: c.name.slice(0, 100),
     osm: c.osm && /^(way|relation|node)$/.test(c.osm.type) && Number.isFinite(c.osm.id) ? { type: c.osm.type, id: c.osm.id } : null,
+    loc: isPt(c.loc) ? c.loc : null,
     holes: c.holes.map((h) => ({
       id: typeof h.id === 'string' ? h.id : uid(),
       number: Number.isFinite(h.number) ? h.number : null,
