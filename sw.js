@@ -1,5 +1,5 @@
 // オフライン対応。アプリ本体は事前にキャッシュし、地図タイルは表示したものを保存する。
-const VERSION = 'v5';
+const VERSION = 'v6';
 const APP_CACHE = `app-${VERSION}`;
 // 写真の画素を読むため CORS で保存する。旧 'tiles' は no-cors（読めない形式）なので使わない
 const TILE_CACHE = 'tiles-v2';
@@ -16,6 +16,7 @@ const APP_FILES = [
   'js/position.js',
   'js/select.js',
   'js/trace.js',
+  'js/holeview.js',
   'js/store.js',
   'vendor/leaflet/leaflet.js',
   'vendor/leaflet/leaflet.css',

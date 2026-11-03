@@ -2,11 +2,12 @@
 import { greenDistances, toYd, greenCenter, distToSegment, haversine } from './geo.js';
 import {
   state, commit, subscribe, activeCourse, activeHole, activeGreen, setActiveGreen, stepHole, setHole,
-  getPinOffset, setPinOffset, setGreenPref, newCourse, exportJSON, importJSON, roundPlan, endRound, holeLabel,
+  getPin, setPin, setGreenPref, newCourse, exportJSON, importJSON, roundPlan, endRound, holeLabel,
 } from './store.js';
 import { Tracker } from './position.js';
 import { MapView } from './map.js';
 import { initSelect } from './select.js';
+import { HoleView } from './holeview.js';
 
 const $ = (id) => document.getElementById(id);
 const tracker = new Tracker(() => state.settings);
@@ -74,14 +75,12 @@ function renderMeasure() {
   $('no-data').hidden = !noData;
   $('distances').hidden = !!noData;
 
-  // ピン補正
-  const off = hole ? getPinOffset(hole) : 0;
-  $('pin-offset').textContent = off === 0 ? '中心' : off > 0 ? `奥 +${off}` : `手前 ${off}`;
-
-  // 距離
+  // 距離。ピンを置いていればピンまで、なければグリーン中心まで
+  const pin = getPin(green);
   const showDist = (gps.status === 'fixed' || gps.status === 'moving') && green && !noData;
-  const d = showDist ? greenDistances(gps.pos, green, off) : null;
-  $('d-pin').textContent = fmt(d?.pin);
+  const d = showDist ? greenDistances(gps.pos, green) : null;
+  $('d-pin').textContent = fmt(d && (pin ? haversine(gps.pos, pin) : d.center));
+  $('pin-label').textContent = pin ? 'ピン' : '中心';
   $('d-center').textContent = fmt(d?.center);
   $('d-front').textContent = fmt(d?.front);
   $('d-back').textContent = fmt(d?.back);
@@ -101,7 +100,16 @@ function renderMeasure() {
   $('gps-text').textContent = state.settings.simulate ? '[テスト] ' + text : text;
   const acc = gps.status === 'fixed' || gps.status === 'moving' ? gps.acc : gps.rawAcc;
   $('gps-acc').textContent = acc != null ? `±${acc < 10 ? acc.toFixed(1) : Math.round(acc)}m` : '';
+
+  // ホールが変わったら、ピン配置モードとタップ地点を解除
+  if (hole?.id !== lastHoleId) {
+    lastHoleId = hole?.id;
+    tapPoint = null;
+    if (holeView.pinMode) setPinMode(false);
+  }
+  if (!noData) renderHole();
 }
+let lastHoleId = null;
 
 $('prev-hole').onclick = () => manualStep(-1);
 $('next-hole').onclick = () => manualStep(1);
@@ -120,18 +128,55 @@ function manualStep(dir) {
   commit();
 }
 
-document.querySelectorAll('[data-pin]').forEach((b) => {
-  b.onclick = () => {
-    const hole = activeHole();
-    if (!hole) return;
-    setPinOffset(hole, Math.max(-60, Math.min(60, getPinOffset(hole) + Number(b.dataset.pin))));
+// ---------------- ホール図とピン ----------------
+let tapPoint = null;
+const holeView = new HoleView($('hole-view'), {
+  onPin: (p) => {
+    const green = activeGreen();
+    if (!green) return;
+    setPin(green, p);
+    setPinMode(false);
     commit();
-  };
+  },
+  onTap: (p) => {
+    tapPoint = tapPoint ? null : p; // もう一度タップで消す
+    renderHole();
+  },
 });
-$('pin-offset').onclick = () => {
-  const hole = activeHole();
-  if (hole) { setPinOffset(hole, 0); commit(); }
+
+function setPinMode(on) {
+  holeView.pinMode = on;
+  $('pin-mode').textContent = on ? 'やめる' : 'ピンを置く';
+  $('pin-mode').classList.toggle('primary', !on);
+  $('pin-center').hidden = !on;
+  tapPoint = null;
+  renderHole();
+}
+$('pin-mode').onclick = () => setPinMode(!holeView.pinMode);
+$('pin-center').onclick = () => {
+  const green = activeGreen();
+  if (green) setPin(green, null);
+  setPinMode(false);
+  commit();
 };
+
+function renderHole() {
+  const hole = activeHole();
+  const green = activeGreen(hole);
+  const live = gps.status === 'fixed' || gps.status === 'moving';
+  $('hv-hint').textContent = holeView.pinMode
+    ? 'ピンの位置をタップ（横線は手前から5ydごと）'
+    : getPin(green) ? '' : 'ピン位置を置くと、ピンまでの距離になります';
+  holeView.render({
+    hole,
+    green,
+    pos: live ? gps.pos : null,
+    acc: live ? gps.acc : null,
+    pin: getPin(green),
+    tap: tapPoint,
+  });
+}
+window.addEventListener('resize', () => renderHole());
 
 // ---------------- ホール自動判定 ----------------
 const autoHole = { candidate: null, count: 0, suppressUntil: 0 };
@@ -288,7 +333,7 @@ $('import-file').onchange = async (e) => {
 };
 
 $('reset-pins').onclick = () => {
-  state.round.pinOffsets = {};
+  state.round.pins = {};
   commit();
 };
 

@@ -40,20 +40,21 @@
       <div id="no-data" class="no-data" hidden></div>
 
       <div id="distances">
-        <div class="pin-block">
-          <div class="pin-value"><span class="label pin-label">ピン</span><span id="d-pin" class="huge">---</span><span class="unit">yd</span></div>
+        <div class="dist-row">
+          <div class="pin-value"><span id="pin-label" class="label pin-label">中心</span><span id="d-pin" class="huge">---</span><span class="unit">yd</span></div>
+          <div class="fcb">
+            <div><span class="label">奥</span><span id="d-back" class="mid">---</span></div>
+            <div><span class="label">中心</span><span id="d-center" class="mid">---</span></div>
+            <div><span class="label">手前</span><span id="d-front" class="mid">---</span></div>
+          </div>
         </div>
-        <div class="fcb">
-          <div><div class="label">手前</div><div id="d-front" class="mid">---</div></div>
-          <div><div class="label">中心</div><div id="d-center" class="mid">---</div></div>
-          <div><div class="label">奥</div><div id="d-back" class="mid">---</div></div>
-        </div>
-        <div class="pin-adjust">
-          <button data-pin="-5" aria-label="ピンを5yd手前へ">-5</button>
-          <button data-pin="-1">-1</button>
-          <button id="pin-offset" class="pin-offset" title="タップで中心に戻す">中心</button>
-          <button data-pin="1">+1</button>
-          <button data-pin="5">+5</button>
+        <div id="hole-wrap" class="hole-wrap">
+          <svg id="hole-view" class="hole-view" role="img" aria-label="ホール図"></svg>
+          <div id="hv-hint" class="hv-hint"></div>
+          <div class="hv-tools">
+            <button id="pin-center" class="sm" hidden>中心に戻す</button>
+            <button id="pin-mode" class="sm primary">ピンを置く</button>
+          </div>
         </div>
       </div>
 
@@ -189,7 +190,7 @@
         </label>
         <p class="note">現在地に最も近いティー〜グリーンのラインから判定します。ティーが登録されていないホールはグリーンだけで判定します。</p>
         <div class="btn-row">
-          <button id="reset-pins">ピン補正をすべてリセット</button>
+          <button id="reset-pins">ピン位置をすべてリセット</button>
         </div>
       </div>
 

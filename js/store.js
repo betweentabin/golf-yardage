@@ -28,7 +28,7 @@ function load() {
         courses: raw.courses,
         activeCourseId: raw.activeCourseId ?? null,
         settings: { ...DEFAULT_SETTINGS, ...raw.settings },
-        round: { holeId: null, greenIdx: {}, pinOffsets: {}, plan: null, ...raw.round },
+        round: { holeId: null, greenIdx: {}, pins: {}, plan: null, ...raw.round },
       };
     }
   } catch { /* 壊れたデータは無視して初期化 */ }
@@ -36,7 +36,7 @@ function load() {
     courses: [],
     activeCourseId: null,
     settings: { ...DEFAULT_SETTINGS },
-    round: { holeId: null, greenIdx: {}, pinOffsets: {}, plan: null },
+    round: { holeId: null, greenIdx: {}, pins: {}, plan: null },
   };
 }
 
@@ -152,7 +152,7 @@ export function startRound(course, opt) {
     holeId: opt.order[0].id,
     greenIdx: {},
     greenPref: state.round.greenPref ?? null, // 2グリーンの左右は前回の選択を引き継ぐ
-    pinOffsets: {}, // ピン位置は日ごとに変わるのでリセット
+    pins: {}, // ピン位置は日ごとに変わるのでリセット
     plan: { courseId: course.id, label: opt.label, order: opt.order.map((h) => h.id), idx: 0, startedAt: Date.now() },
   };
 }
@@ -193,10 +193,13 @@ export function stepHole(dir) {
   state.round.holeId = c.holes[(i + dir + c.holes.length) % c.holes.length].id;
 }
 
-const pinKey = (hole) => `${state.activeCourseId}:${hole.id}`;
-export const getPinOffset = (hole) => state.round.pinOffsets[pinKey(hole)] || 0;
-export function setPinOffset(hole, yd) {
-  state.round.pinOffsets[pinKey(hole)] = yd;
+// ピン位置はグリーンごとに [lat, lon] で持つ（2グリーンは左右それぞれ）
+const pinKey = (green) => `${state.activeCourseId}:${green.id}`;
+export const getPin = (green) => (green && state.round.pins?.[pinKey(green)]) || null;
+export function setPin(green, p) {
+  state.round.pins ||= {};
+  if (p) state.round.pins[pinKey(green)] = p;
+  else delete state.round.pins[pinKey(green)];
 }
 
 export function newCourse(name, osm = null) {

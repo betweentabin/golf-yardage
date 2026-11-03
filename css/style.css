@@ -11,6 +11,12 @@
   --ok: #0a7d32;
   --warn: #c76a00;
   --bad: #b00020;
+  --hv-bg: #e9efe6;
+  --hv-fairway: #c9dcb8;
+  --hv-green: #4caf50;
+  --hv-green-line: #1b5e20;
+  --hv-ring: #7a8a74;
+  --hv-line: #0057d9;
   --tap: 56px;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
@@ -28,6 +34,12 @@
   --ok: #2fd27a;
   --warn: #ffb020;
   --bad: #ff5c6c;
+  --hv-bg: #0d1a10;
+  --hv-fairway: #1f3a24;
+  --hv-green: #2fa85a;
+  --hv-green-line: #9be7b4;
+  --hv-ring: #5d7062;
+  --hv-line: #5aa9ff;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -142,7 +154,7 @@ main { flex: 1; position: relative; min-height: 0; }
 
 .seg { display: flex; gap: 6px; }
 .seg[hidden] { display: none; }
-.seg button { flex: 1; min-height: 48px; font-size: 20px; }
+.seg button { flex: 1; min-height: 40px; font-size: 18px; }
 .seg button.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 
 #distances { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 8px; min-height: 0; overflow: hidden; }
@@ -151,19 +163,20 @@ main { flex: 1; position: relative; min-height: 0; }
 .pin-block { text-align: center; }
 .pin-value { display: flex; align-items: baseline; justify-content: center; gap: 6px; }
 .huge {
-  font-size: min(32vw, 21vh);
+  font-size: min(22vw, 14vh);
   font-weight: 800;
   line-height: 0.95;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.04em;
 }
 .unit { font-size: 28px; font-weight: 800; }
-.fcb { display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; border-top: 2px solid var(--line); border-bottom: 2px solid var(--line); padding: 6px 0; }
-.fcb > div + div { border-left: 2px solid var(--line); }
-.mid { font-size: min(15vw, 11vh); font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
-.pin-adjust { display: grid; grid-template-columns: 1fr 1fr 1.6fr 1fr 1fr; gap: 6px; }
-.pin-adjust button { min-height: var(--tap); font-size: 22px; }
-.pin-offset { font-size: 18px !important; background: var(--bg) !important; }
+.dist-row { display: flex; align-items: center; gap: 8px; }
+.dist-row .pin-value { flex: 1; min-width: 0; justify-content: center; }
+.fcb { flex: none; display: flex; flex-direction: column; gap: 0; border-left: 2px solid var(--line); padding-left: 10px; }
+.fcb > div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.fcb .label { font-size: 14px; white-space: nowrap; }
+.fcb .mid { min-width: 2.1em; text-align: right; line-height: 1.1; }
+.mid { font-size: min(8vw, 4.2vh); font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .pin-label { writing-mode: vertical-rl; font-size: 20px; align-self: center; letter-spacing: 0.1em; }
 
 .no-data { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 18px; font-weight: 600; color: var(--muted); padding: 16px; line-height: 1.6; }
@@ -266,3 +279,33 @@ button.wide { width: 100%; min-height: 52px; margin-top: 8px; }
 .setup-tools { margin: 10px 0 8px; }
 .view[hidden] { display: none !important; }
 #finder[hidden], #setup[hidden], .round-card[hidden] { display: none; }
+
+/* ---- ホール図 ---- */
+.hole-wrap { position: relative; flex: 1; min-height: 160px; border-radius: 14px; overflow: hidden; background: var(--hv-bg); }
+.hole-view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: manipulation; }
+.hv-tools { position: absolute; right: 6px; bottom: 6px; display: flex; gap: 6px; pointer-events: none; }
+.hv-tools > * { pointer-events: auto; }
+.hv-tools button { box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+.hv-hint { position: absolute; left: 8px; top: 6px; right: 8px; font-size: 12px; font-weight: 700; color: var(--muted); pointer-events: none; }
+.hv-fairway { stroke: var(--hv-fairway); stroke-linecap: round; }
+.hv-ring { fill: none; stroke: var(--hv-ring); stroke-width: 1; stroke-dasharray: 3 5; }
+.hv-ring-label { fill: var(--hv-ring); font: 700 11px -apple-system, sans-serif; }
+.hv-green { fill: var(--hv-green); fill-opacity: .55; stroke: var(--hv-green-line); stroke-width: 2; }
+.hv-green-off { fill: none; stroke: var(--hv-ring); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.hv-green-name { fill: var(--muted); font: 700 12px -apple-system, sans-serif; text-anchor: middle; }
+.hv-tick { stroke: var(--fg); stroke-opacity: .3; stroke-width: 1; }
+.hv-tick-minor { stroke-opacity: .15; }
+.hv-tick-label { fill: var(--fg); fill-opacity: .75; font: 700 12px -apple-system, sans-serif; paint-order: stroke; stroke: var(--hv-bg); stroke-width: 3px; }
+.hv-edge-label { fill: var(--fg); font: 800 13px -apple-system, sans-serif; text-anchor: middle; }
+.hv-tee { fill: #4fc3f7; stroke: #01579b; stroke-width: 1.5; }
+.hv-line { stroke: var(--hv-line); stroke-width: 3; stroke-dasharray: 8 5; }
+.hv-tap-line { stroke: var(--fg); stroke-opacity: .6; stroke-width: 2; stroke-dasharray: 2 4; }
+.hv-tap { fill: #fff; stroke: #000; stroke-width: 2; }
+.hv-tap-label { fill: var(--fg); font: 800 15px -apple-system, sans-serif; paint-order: stroke; stroke: var(--hv-bg); stroke-width: 4px; }
+.hv-flag-pole { stroke: var(--fg); stroke-width: 2; }
+.hv-flag-cloth { fill: #e53935; }
+.hv-flag-cup { fill: var(--fg); }
+.hv-flag-unset { opacity: .35; }
+.hv-acc { fill: var(--hv-line); fill-opacity: .15; stroke: var(--hv-line); stroke-opacity: .5; }
+.hv-me { fill: var(--hv-line); stroke: #fff; stroke-width: 3; }
+.hv-note { fill: var(--muted); font: 700 12px -apple-system, sans-serif; text-anchor: middle; }
