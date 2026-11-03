@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ヤーデージ">
+  <meta name="theme-color" content="#0b3d2e">
+  <title>ゴルフ ヤーデージ</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="banner" class="banner" hidden>
+    <span id="banner-text"></span>
+    <button id="banner-close" aria-label="閉じる">×</button>
+  </div>
+
+  <main>
+    <!-- 計測 -->
+    <section id="view-measure" class="view">
+      <header class="hole-bar">
+        <button id="prev-hole" class="nav-btn" aria-label="前のホール">◀</button>
+        <div class="hole-info">
+          <div id="course-name" class="course-name"></div>
+          <div class="hole-label"><span id="hole-num">--</span><span id="hole-par" class="par"></span></div>
+          <div id="auto-badge" class="auto-badge" hidden>自動</div>
+        </div>
+        <button id="next-hole" class="nav-btn" aria-label="次のホール">▶</button>
+      </header>
+
+      <div id="green-switch" class="seg" hidden></div>
+
+      <div id="no-data" class="no-data" hidden></div>
+
+      <div id="distances">
+        <div class="pin-block">
+          <div class="label">ピン</div>
+          <div class="pin-value"><span id="d-pin" class="huge">---</span><span class="unit">yd</span></div>
+        </div>
+        <div class="fcb">
+          <div><div class="label">手前</div><div id="d-front" class="mid">---</div></div>
+          <div><div class="label">中心</div><div id="d-center" class="mid">---</div></div>
+          <div><div class="label">奥</div><div id="d-back" class="mid">---</div></div>
+        </div>
+        <div class="pin-adjust">
+          <button data-pin="-5">-5</button>
+          <button data-pin="-1">-1</button>
+          <button id="pin-offset" class="pin-offset" title="タップで中心に戻す">中心</button>
+          <button data-pin="1">+1</button>
+          <button data-pin="5">+5</button>
+        </div>
+        <div class="pin-hint">ピン位置: −手前 / ＋奥（yd）</div>
+      </div>
+
+      <div id="gps-status" class="gps-status">
+        <span id="gps-dot" class="dot"></span>
+        <span id="gps-text">測位を開始しています…</span>
+        <span id="gps-acc" class="acc"></span>
+      </div>
+      <div id="wake-status" class="wake-status"></div>
+    </section>
+
+    <!-- 地図・編集 -->
+    <section id="view-map" class="view" hidden>
+      <div id="map"></div>
+      <div class="map-top">
+        <div class="map-hole">
+          <button id="map-prev" class="sm">◀</button>
+          <select id="map-hole-select" aria-label="ホール"></select>
+          <button id="map-next" class="sm">▶</button>
+          <select id="map-green-select" aria-label="グリーン"></select>
+        </div>
+        <div class="map-actions">
+          <button id="map-locate" class="sm" title="現在地へ">◎</button>
+          <button id="map-fit" class="sm" title="ホール全体">⤢</button>
+          <button id="map-edit-toggle" class="sm">編集</button>
+        </div>
+      </div>
+      <div id="map-info" class="map-info" hidden></div>
+      <div id="edit-panel" class="edit-panel" hidden>
+        <div id="edit-mode-bar" class="edit-mode-bar" hidden>
+          <span id="edit-mode-text"></span>
+          <button id="mode-undo" class="sm" hidden>1点戻す</button>
+          <button id="mode-done" class="sm primary" hidden>完了</button>
+          <button id="mode-cancel" class="sm">やめる</button>
+        </div>
+        <div id="edit-buttons" class="edit-grid">
+          <button data-act="outline">外形を描く</button>
+          <button data-act="center">中心をタップで指定</button>
+          <button data-act="center-gps">現在地を中心に登録</button>
+          <button data-act="center-centroid">中心＝外形の重心</button>
+          <button data-act="tee">ティーを指定</button>
+          <button data-act="hole-props">番号・Par</button>
+          <button data-act="add-hole">＋ホール</button>
+          <button data-act="add-green">＋グリーン</button>
+          <button data-act="del-green" class="danger">グリーン削除</button>
+          <button data-act="del-hole" class="danger">ホール削除</button>
+          <button data-act="osm">表示範囲をOSMから取込</button>
+          <button data-act="cache-tiles">表示範囲の写真を保存</button>
+        </div>
+        <p class="edit-hint">頂点・中心・ティーはドラッグで移動。頂点をタップすると削除できます。</p>
+      </div>
+    </section>
+
+    <!-- コース・設定 -->
+    <section id="view-settings" class="view scroll" hidden>
+      <h2>コース</h2>
+      <div class="card">
+        <label class="row">使用するコース
+          <select id="course-select"></select>
+        </label>
+        <div class="btn-row">
+          <button id="course-new">新規作成</button>
+          <button id="course-rename">名前を変更</button>
+          <button id="course-delete" class="danger">削除</button>
+        </div>
+        <p id="course-summary" class="note"></p>
+        <p class="note">新しいコースは「地図・編集」でコースの場所を表示し、「編集」→「表示範囲をOSMから取込」で作るのが早いです。</p>
+      </div>
+
+      <h2>共有（JSON）</h2>
+      <div class="card">
+        <div class="btn-row">
+          <button id="export-course">このコースを書き出す</button>
+          <button id="export-all">全コースを書き出す</button>
+        </div>
+        <div class="btn-row">
+          <button id="import-btn">ファイルを読み込む</button>
+          <input id="import-file" type="file" accept="application/json,.json" hidden>
+        </div>
+        <p class="note">同じコース（同じID）を読み込むと上書きします。</p>
+      </div>
+
+      <h2>ラウンド</h2>
+      <div class="card">
+        <label class="row switch">ホールを自動で切り替える
+          <input id="set-autohole" type="checkbox">
+        </label>
+        <p class="note">現在地に最も近いティー〜グリーンのラインから判定します。ティーが登録されていないホールはグリーンだけで判定します。</p>
+        <div class="btn-row">
+          <button id="reset-pins">ピン補正をすべてリセット</button>
+        </div>
+      </div>
+
+      <h2>測位の精度</h2>
+      <div class="card">
+        <label class="row">精度ゲート（これより悪いと距離を出さない）
+          <span><input id="set-acc" type="number" min="1" max="50" step="0.5" inputmode="decimal"> m</span>
+        </label>
+        <label class="row">静止とみなす範囲
+          <span><input id="set-still-r" type="number" min="1" max="20" step="0.5" inputmode="decimal"> m</span>
+        </label>
+        <label class="row">静止とみなす時間
+          <span><input id="set-still-s" type="number" min="1" max="30" step="1" inputmode="numeric"> 秒</span>
+        </label>
+        <p class="note">iPhoneの報告する誤差は、条件が良くても4〜5m程度のことがよくあります。「測位中」のまま進まないときは、精度ゲートを5〜8mに上げてください。</p>
+      </div>
+
+      <h2>表示</h2>
+      <div class="card">
+        <label class="row">配色
+          <select id="set-theme">
+            <option value="light">白背景（直射日光向け）</option>
+            <option value="dark">黒背景</option>
+          </select>
+        </label>
+        <label class="row">地図
+          <select id="set-tiles">
+            <option value="gsi">航空写真（国土地理院）</option>
+            <option value="osm">地図（OpenStreetMap）</option>
+          </select>
+        </label>
+      </div>
+
+      <h2>テスト</h2>
+      <div class="card">
+        <label class="row switch">テストモード
+          <input id="set-simulate" type="checkbox">
+        </label>
+        <p class="note">オンの間は「地図・編集」で地図を長押しした場所を現在地として扱います（誤差3m）。自宅での動作確認用です。</p>
+      </div>
+
+      <h2>この端末の状態</h2>
+      <div class="card">
+        <p id="env-status" class="note"></p>
+      </div>
+      <p class="credit">地図: 国土地理院 / © OpenStreetMap contributors。コースデータ: © OpenStreetMap contributors (ODbL)</p>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button data-view="measure" class="active">計測</button>
+    <button data-view="map">地図・編集</button>
+    <button data-view="settings">コース・設定</button>
+  </nav>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
